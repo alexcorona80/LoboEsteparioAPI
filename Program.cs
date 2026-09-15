@@ -28,6 +28,8 @@ builder.Services.AddSingleton<IMongoClient>(sp =>
 builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<IMongoClient>().GetDatabase(sp.GetRequiredService<IOptions<MongoOptions>>().Value.DatabaseName));
 builder.Services.AddScoped<IBusinessRepository, BusinessRepository>();
+builder.Services.AddScoped<ISentEmailRepository, SentEmailRepository>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 var app = builder.Build();
 

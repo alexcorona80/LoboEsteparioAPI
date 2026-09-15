@@ -10,6 +10,11 @@ public sealed class BusinessRepository : IBusinessRepository
 {
     private readonly IMongoCollection<BusinessDocument> _collection;
 
+    /// <summary>Filtro para documentos cuyo array Emails exista y tenga al menos un elemento.</summary>
+    private static readonly FilterDefinition<BusinessDocument> HasEmailFilter = Builders<BusinessDocument>.Filter.And(
+        Builders<BusinessDocument>.Filter.Exists(b => b.Emails),
+        Builders<BusinessDocument>.Filter.Not(Builders<BusinessDocument>.Filter.Size(b => b.Emails, 0)));
+
     public BusinessRepository(IMongoDatabase database, IOptions<MongoOptions> options)
     {
         _collection = database.GetCollection<BusinessDocument>(options.Value.CollectionName);
@@ -36,6 +41,14 @@ public sealed class BusinessRepository : IBusinessRepository
         await _collection.Find(FilterDefinition<BusinessDocument>.Empty)
             .Limit(limit)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<BusinessDocument>> ListWithEmailsAsync(int limit, CancellationToken cancellationToken = default) =>
+        await _collection.Find(HasEmailFilter)
+            .Limit(limit)
+            .ToListAsync(cancellationToken);
+
+    public async Task<long> CountWithEmailsAsync(CancellationToken cancellationToken = default) =>
+        await _collection.CountDocumentsAsync(HasEmailFilter, cancellationToken: cancellationToken);
 
     public async Task<BusinessStatsResponse> GetStatsAsync(CancellationToken cancellationToken = default)
     {
