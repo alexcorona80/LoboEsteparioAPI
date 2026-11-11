@@ -15,16 +15,27 @@ public sealed class BusinessController(
     IBusinessRepository businessRepository,
     IOptions<OvertureOptions> overtureOptions) : ControllerBase
 {
-    /// <summary>Lista los negocios ya persistidos en la colección BuisnessList.</summary>
+    /// <summary>Lista los negocios ya persistidos en la colección BusinessList, con filtro opcional por categoría.</summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<BusinessDocument>>> List([FromQuery] int? limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<BusinessDocument>>> List(
+        [FromQuery] int? limit,
+        [FromQuery] string? category,
+        CancellationToken cancellationToken)
     {
         var effectiveLimit = Math.Clamp(limit ?? 100, 1, 1000);
-        var businesses = await businessRepository.ListAsync(effectiveLimit, cancellationToken);
+        var businesses = await businessRepository.ListAsync(effectiveLimit, category, cancellationToken);
         return Ok(businesses);
     }
 
-    /// <summary>Estadísticas agregadas de la colección (total, con contacto, fuentes activas, última ejecución) para el panel de la app de escritorio.</summary>
+    /// <summary>Lista todas las categorías distintas registradas en la colección de negocios.</summary>
+    [HttpGet("categories")]
+    public async Task<ActionResult<IReadOnlyList<string>>> GetCategories(CancellationToken cancellationToken)
+    {
+        var categories = await businessRepository.GetCategoriesAsync(cancellationToken);
+        return Ok(categories);
+    }
+
+    /// <summary>Estadísticas agregadas de la colección (total, con contacto, fuentes activas, última ejecución).</summary>
     [HttpGet("stats")]
     public async Task<ActionResult<BusinessStatsResponse>> Stats(CancellationToken cancellationToken)
     {
@@ -34,7 +45,7 @@ public sealed class BusinessController(
 
     /// <summary>
     /// Scrapea negocios de Overture para el bounding box/filtros dados y hace upsert de ellos
-    /// en la colección MongoDB Buisness/BuisnessList.
+    /// en la colección MongoDB Business/BusinessList asociando la categoría elegida.
     /// </summary>
     [HttpPost("scrape")]
     [ProducesResponseType<ScrapeResponse>(StatusCodes.Status200OK)]
@@ -57,7 +68,7 @@ public sealed class BusinessController(
 
             var scrapedAt = DateTimeOffset.UtcNow;
             var releaseVersion = overtureOptions.Value.ReleaseVersion;
-            var documents = places.Select(place => BusinessDocument.FromOverturePlace(place, releaseVersion, scrapedAt));
+            var documents = places.Select(place => BusinessDocument.FromOverturePlace(place, releaseVersion, scrapedAt, category));
 
             var persistedCount = await businessRepository.UpsertManyAsync(documents, cancellationToken);
 

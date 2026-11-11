@@ -11,15 +11,65 @@ namespace LoboEsteparioAPI.Controllers;
 public sealed class CrmController(
     IBusinessRepository businessRepository,
     IEmailService emailService,
-    ISentEmailRepository sentEmailRepository) : ControllerBase
+    ISentEmailRepository sentEmailRepository,
+    IEmailTemplateRepository templateRepository) : ControllerBase
 {
-    /// <summary>Lista los negocios de BusinessList que tienen al menos un correo registrado (destinatarios del CRM).</summary>
+    /// <summary>
+    /// Lista los negocios de BusinessList que tienen al menos un correo registrado (destinatarios del CRM).
+    /// Admite filtrado por categoría y reglas anti-spam (excluir por ronda y días de enfriamiento).
+    /// </summary>
     [HttpGet("recipients")]
-    public async Task<ActionResult<IReadOnlyList<BusinessDocument>>> Recipients([FromQuery] int? limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<BusinessDocument>>> Recipients(
+        [FromQuery] int? limit,
+        [FromQuery] string? category,
+        [FromQuery] string? excludeRound,
+        [FromQuery] int? cooldownDays,
+        CancellationToken cancellationToken)
     {
         var effectiveLimit = Math.Clamp(limit ?? 500, 1, 2000);
-        var businesses = await businessRepository.ListWithEmailsAsync(effectiveLimit, cancellationToken);
+        var businesses = await businessRepository.ListWithEmailsAsync(
+            effectiveLimit,
+            category,
+            excludeRound,
+            cooldownDays,
+            cancellationToken);
+
         return Ok(businesses);
+    }
+
+    /// <summary>Lista las plantillas de correo guardadas en MongoDB (inicializa por defecto si está vacía).</summary>
+    [HttpGet("templates")]
+    public async Task<ActionResult<IReadOnlyList<EmailTemplateDocument>>> GetTemplates(CancellationToken cancellationToken)
+    {
+        var templates = await templateRepository.ListAsync(cancellationToken);
+        return Ok(templates);
+    }
+
+    /// <summary>Crea o actualiza una plantilla de correo en MongoDB.</summary>
+    [HttpPost("templates")]
+    public async Task<ActionResult<EmailTemplateDocument>> SaveTemplate(
+        [FromBody] EmailTemplateDocument template,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(template.Name))
+        {
+            return Problem(detail: "El nombre de la plantilla es obligatorio.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid template");
+        }
+
+        var saved = await templateRepository.SaveAsync(template, cancellationToken);
+        return Ok(saved);
+    }
+
+    /// <summary>Elimina una plantilla de correo de MongoDB por su Id.</summary>
+    [HttpDelete("templates/{id}")]
+    public async Task<ActionResult<object>> DeleteTemplate(string id, CancellationToken cancellationToken)
+    {
+        var deleted = await templateRepository.DeleteAsync(id, cancellationToken);
+        if (!deleted)
+        {
+            return NotFound(new { message = "Plantilla no encontrada" });
+        }
+        return Ok(new { success = true });
     }
 
     /// <summary>Envía un correo (o campaña) a los destinatarios indicados usando la configuración SMTP del body y registra el historial.</summary>
@@ -81,6 +131,7 @@ public sealed class CrmController(
             SentCount = sentStats.SentCount,
             FailedCount = sentStats.FailedCount,
             LastSentAtUtc = sentStats.LastSentAtUtc,
+            OpenedCount = sentStats.OpenedCount,
             BusinessesWithEmailCount = businessesWithEmail,
         });
     }

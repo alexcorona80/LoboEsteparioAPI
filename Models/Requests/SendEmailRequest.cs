@@ -9,11 +9,14 @@ public sealed class SendEmailRequest
     /// <summary>Destinatarios. Pueden llevar el id de negocio de BusinessList para trazabilidad.</summary>
     public required IReadOnlyList<EmailRecipient> Recipients { get; init; }
 
-    /// <summary>Asunto del correo. Acepta el placeholder {Empresa}.</summary>
+    /// <summary>Asunto del correo. Acepta placeholders como {Empresa}, {Categoria}, {Ubicacion}.</summary>
     public required string Subject { get; init; }
 
-    /// <summary>Cuerpo del correo (texto plano). Acepta el placeholder {Empresa}.</summary>
+    /// <summary>Cuerpo del correo (texto plano). Acepta placeholders como {Empresa}, {Categoria}, {Ubicacion}, {Remitente}.</summary>
     public required string Body { get; init; }
+
+    /// <summary>Identificador o nombre de la ronda de campaña actual (ej. 'Ronda 1').</summary>
+    public string? CampaignRound { get; init; }
 }
 
 /// <summary>Parámetros SMTP de la cuenta remitente, configurables desde el formulario de la app de escritorio.</summary>
@@ -32,5 +35,7 @@ public sealed class EmailRecipient
 {
     public string? BusinessId { get; init; }
     public string? BusinessName { get; init; }
+    public string? Category { get; init; }
+    public string? Location { get; init; }
     public required string ToEmail { get; init; }
 }

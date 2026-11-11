@@ -37,15 +37,62 @@ public sealed class BusinessRepository : IBusinessRepository
         return result.Upserts.Count + result.ModifiedCount;
     }
 
-    public async Task<IReadOnlyList<BusinessDocument>> ListAsync(int limit, CancellationToken cancellationToken = default) =>
-        await _collection.Find(FilterDefinition<BusinessDocument>.Empty)
-            .Limit(limit)
-            .ToListAsync(cancellationToken);
+    public async Task<IReadOnlyList<BusinessDocument>> ListAsync(int limit, string? category = null, CancellationToken cancellationToken = default)
+    {
+        var filter = FilterDefinition<BusinessDocument>.Empty;
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            var cat = category.Trim();
+            filter = Builders<BusinessDocument>.Filter.Or(
+                Builders<BusinessDocument>.Filter.Eq(b => b.CategoryTag, cat),
+                Builders<BusinessDocument>.Filter.Eq(b => b.MainCategory, cat));
+        }
 
-    public async Task<IReadOnlyList<BusinessDocument>> ListWithEmailsAsync(int limit, CancellationToken cancellationToken = default) =>
-        await _collection.Find(HasEmailFilter)
+        return await _collection.Find(filter)
+            .SortByDescending(b => b.ScrapedAtUtc)
             .Limit(limit)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<BusinessDocument>> ListWithEmailsAsync(
+        int limit,
+        string? category = null,
+        string? excludeRound = null,
+        int? cooldownDays = null,
+        CancellationToken cancellationToken = default)
+    {
+        var filters = new List<FilterDefinition<BusinessDocument>> { HasEmailFilter };
+
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            var cat = category.Trim();
+            filters.Add(Builders<BusinessDocument>.Filter.Or(
+                Builders<BusinessDocument>.Filter.Eq(b => b.CategoryTag, cat),
+                Builders<BusinessDocument>.Filter.Eq(b => b.MainCategory, cat)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(excludeRound))
+        {
+            var round = excludeRound.Trim();
+            filters.Add(Builders<BusinessDocument>.Filter.Ne(b => b.LastCampaignRound, round));
+        }
+
+        if (cooldownDays.HasValue && cooldownDays.Value > 0)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-cooldownDays.Value);
+            // Elegible si nunca fue contactado o fue contactado antes del corte
+            filters.Add(Builders<BusinessDocument>.Filter.Or(
+                Builders<BusinessDocument>.Filter.Eq(b => b.LastContactedAtUtc, null),
+                Builders<BusinessDocument>.Filter.Lt(b => b.LastContactedAtUtc, cutoff)));
+        }
+
+        var combinedFilter = Builders<BusinessDocument>.Filter.And(filters);
+
+        return await _collection.Find(combinedFilter)
+            .SortBy(b => b.LastContactedAtUtc) // Los menos recientemente contactados primero
+            .Limit(limit)
+            .ToListAsync(cancellationToken);
+    }
 
     public async Task<long> CountWithEmailsAsync(CancellationToken cancellationToken = default) =>
         await _collection.CountDocumentsAsync(HasEmailFilter, cancellationToken: cancellationToken);
@@ -80,5 +127,42 @@ public sealed class BusinessRepository : IBusinessRepository
             ActiveSourceCount = releaseVersions.Count,
             LastScrapedAtUtc = lastScrapedAtUtc,
         };
+    }
+
+    public async Task<IReadOnlyList<string>> GetCategoriesAsync(CancellationToken cancellationToken = default)
+    {
+        var catTags = await _collection.Distinct(b => b.CategoryTag, FilterDefinition<BusinessDocument>.Empty, cancellationToken: cancellationToken)
+            .ToListAsync(cancellationToken);
+        var mainCats = await _collection.Distinct(b => b.MainCategory, FilterDefinition<BusinessDocument>.Empty, cancellationToken: cancellationToken)
+            .ToListAsync(cancellationToken);
+
+        return catTags.Concat(mainCats)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c)
+            .ToList();
+    }
+
+    public async Task RegisterEmailSentAsync(string businessId, string? campaignRound, DateTime sentAtUtc, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessId))
+        {
+            return;
+        }
+
+        var update = Builders<BusinessDocument>.Update
+            .Set(b => b.LastContactedAtUtc, sentAtUtc)
+            .Inc(b => b.ContactCount, 1);
+
+        if (!string.IsNullOrWhiteSpace(campaignRound))
+        {
+            update = update.Set(b => b.LastCampaignRound, campaignRound.Trim());
+        }
+
+        await _collection.UpdateOneAsync(
+            b => b.Id == businessId,
+            update,
+            cancellationToken: cancellationToken);
     }
 }

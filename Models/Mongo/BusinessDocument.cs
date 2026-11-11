@@ -30,7 +30,19 @@ public sealed class BusinessDocument
     public required string OvertureReleaseVersion { get; init; }
     public required DateTime ScrapedAtUtc { get; init; }
 
-    public static BusinessDocument FromOverturePlace(OverturePlace place, string releaseVersion, DateTimeOffset scrapedAt) => new()
+    /// <summary>Etiqueta de categoría asignada durante la prospección.</summary>
+    public string? CategoryTag { get; set; }
+
+    /// <summary>Fecha y hora UTC del último correo enviado a este negocio.</summary>
+    public DateTime? LastContactedAtUtc { get; set; }
+
+    /// <summary>Cantidad total de correos enviados a este negocio.</summary>
+    public int ContactCount { get; set; } = 0;
+
+    /// <summary>Última ronda de campaña en la que fue contactado.</summary>
+    public string? LastCampaignRound { get; set; }
+
+    public static BusinessDocument FromOverturePlace(OverturePlace place, string releaseVersion, DateTimeOffset scrapedAt, string? categoryTag = null) => new()
     {
         Id = place.Id,
         Name = place.Name,
@@ -52,5 +64,7 @@ public sealed class BusinessDocument
         OvertureUpdateTimeUtc = place.UpdateTime?.UtcDateTime,
         OvertureReleaseVersion = releaseVersion,
         ScrapedAtUtc = scrapedAt.UtcDateTime,
+        CategoryTag = categoryTag ?? place.MainCategory,
     };
 }
+
