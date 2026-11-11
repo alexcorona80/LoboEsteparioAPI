@@ -52,7 +52,13 @@ public sealed class OverturePlacesService(IDuckDbConnectionFactory connectionFac
             new(request.MinLatitude),
         };
 
-        if (!string.IsNullOrWhiteSpace(request.Category))
+        if (OvertureTaxonomyCategories.TryGetValues(request.Category, out var taxonomyValues))
+        {
+            // Categorías de TI: no existen como basic_category, se filtra por la jerarquía de taxonomía.
+            sql.Append($" AND list_has_any(taxonomy.hierarchy, [{string.Join(", ", taxonomyValues.Select(_ => "?"))}])");
+            parameters.AddRange(taxonomyValues.Select(v => new DuckDBParameter(v)));
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Category))
         {
             sql.Append(" AND lower(basic_category) = lower(?)");
             parameters.Add(new DuckDBParameter(request.Category));
