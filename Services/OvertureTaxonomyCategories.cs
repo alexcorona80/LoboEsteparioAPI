@@ -30,8 +30,6 @@ public static class OvertureTaxonomyCategories
             "computer_store",
             "computer_hardware_company",
             "computer_wholesaler",
-            "mobile_phone_store",
-            "mobile_phone_accessory_store",
             "mobile_phone_repair",
             "electronics_repair_shop",
         ],
